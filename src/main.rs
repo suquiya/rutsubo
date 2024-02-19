@@ -66,11 +66,12 @@ pub fn convert(_cmd: Command, ctx: Context) -> action_result!() {
     done!()
 }
 
+#[derive(Debug, Deserialize, Serialize)]
 struct WpTermData {
     pub taxonomy_type: WpTaxonomyType,
     pub record: Value,
 }
-
+#[derive(Debug, Deserialize, Serialize)]
 enum WpTaxonomyType {
     Category,
     PostTag,
@@ -132,7 +133,6 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
             }
             map
         });
-    println!("terms:{}", terms.len());
 
     let term_relation = get_table_data_as_value_array(src, "term_relationships.json")
         .into_iter()
@@ -214,7 +214,7 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
         }
         let (dest_file_path, post_name) = {
             let mut f = ingot_dest_dir.clone();
-            let mut pn;
+            let pn;
             if d.post_name.is_empty() {
                 let mut f_name = if d.post_title.is_empty() {
                     d.post_type.clone() + "-" + &d.post_status + "-" + &d.id.to_string()
@@ -296,9 +296,19 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
         bw.write_all(new_line).unwrap();
         bw.write_all(ingot_id_prefix).unwrap();
         bw.write_all(ingot_id.to_string().as_bytes()).unwrap();
+        bw.write_all(new_line).unwrap();
         ingot_id = ingot_id + 1;
         bw.flush().unwrap();
     }
+
+    let categories_path = {
+        let mut categories_path = ingot_dest_dir.clone();
+        categories_path.push("categories.ron");
+        categories_path
+    };
+    let categories_file = open_dest_file(categories_path);
+    let cbw = BufWriter::new(categories_file);
+    
 }
 
 fn open_dest_file(dest_file_path: PathBuf) -> File {
