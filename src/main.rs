@@ -297,7 +297,7 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
         bw.write_all(ingot_id_prefix).unwrap();
         bw.write_all(ingot_id.to_string().as_bytes()).unwrap();
         bw.write_all(new_line).unwrap();
-        ingot_id = ingot_id + 1;
+        ingot_id += 1;
         bw.flush().unwrap();
     }
 
@@ -308,7 +308,6 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
     };
     let categories_file = open_dest_file(categories_path);
     let cbw = BufWriter::new(categories_file);
-    
 }
 
 fn open_dest_file(dest_file_path: PathBuf) -> File {
