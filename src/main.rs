@@ -11,9 +11,14 @@ use combu::{
     crate_license, crate_version, done, flags, license, preset_help_command, vector, Command,
     Context, Flag,
 };
+use nibi::app::{
+    category::{insert_descendant_to_category_list, Category},
+    tag::Tag,
+};
 use percent_encoding::percent_decode_str;
+use ron::ser::PrettyConfig;
 use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use serde_json::{from_value, Value};
 
 fn main() {
     let _ = Command::with_all_field(
@@ -86,6 +91,25 @@ impl IdValueUnit {
     fn new(id: u64, value: Value) -> Self {
         IdValueUnit { id, _value: value }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WpTermValue {
+    #[serde(deserialize_with = "deserialize_usize")]
+    pub term_id: usize,
+    pub name: String,
+    pub description: String,
+    pub slug: String,
+    #[serde(deserialize_with = "deserialize_usize")]
+    pub parent: usize,
+}
+
+fn deserialize_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    Ok(s.parse().unwrap())
 }
 
 fn convert_data(src: &PathBuf, dest: &PathBuf) {
@@ -301,13 +325,72 @@ fn convert_data(src: &PathBuf, dest: &PathBuf) {
         bw.flush().unwrap();
     }
 
-    let categories_path = {
-        let mut categories_path = ingot_dest_dir.clone();
-        categories_path.push("categories.ron");
-        categories_path
-    };
-    let categories_file = open_dest_file(categories_path);
-    let cbw = BufWriter::new(categories_file);
+    let (categorys, tags): (Vec<Category>, Vec<Tag>) = terms.into_iter().fold(
+        (Vec::new(), Vec::new()),
+        |(mut categories, mut tags), term| {
+            let (term_id, tv) = term;
+            let taxonomy_type = tv.taxonomy_type;
+            let val: WpTermValue = from_value(tv.record).unwrap();
+            match taxonomy_type {
+                WpTaxonomyType::Category => {
+                    if val.parent > 0 {
+                        let c = Category::new_with_parent(
+                            term_id.try_into().unwrap(),
+                            val.slug,
+                            val.name,
+                            val.description,
+                            Some(val.parent),
+                        );
+                        let r = insert_descendant_to_category_list(&mut categories, c);
+                        if let Some(r) = r {
+                            categories.push(r);
+                        }
+                    } else {
+                        categories.push(Category::new(
+                            term_id.try_into().unwrap(),
+                            val.slug,
+                            val.name,
+                            val.description,
+                        ));
+                    }
+                }
+                WpTaxonomyType::PostTag => {
+                    tags.push(Tag::new(
+                        term_id.try_into().unwrap(),
+                        val.slug,
+                        val.name,
+                        val.description,
+                    ));
+                }
+            };
+            (categories, tags)
+        },
+    );
+    let categories_path = get_dest_file_path(dest, "categories.ron");
+    let mut categories_file = open_dest_file(categories_path);
+    categories_file
+        .write_all(
+            ron::ser::to_string_pretty(&categorys, PrettyConfig::default())
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+
+    let tags_path = get_dest_file_path(dest, "tags.ron");
+    let mut tags_file = open_dest_file(tags_path);
+    tags_file
+        .write_all(
+            ron::ser::to_string_pretty(&tags, PrettyConfig::default())
+                .unwrap()
+                .as_bytes(),
+        )
+        .unwrap();
+}
+
+fn get_dest_file_path(dest_dir: &PathBuf, file_name: &str) -> PathBuf {
+    let mut dest_file_path = dest_dir.clone();
+    dest_file_path.push(file_name);
+    dest_file_path
 }
 
 fn open_dest_file(dest_file_path: PathBuf) -> File {
